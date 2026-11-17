@@ -1,0 +1,8 @@
+.tools/
+secrets.local.ps1
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+node_modules/

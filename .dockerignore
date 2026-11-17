@@ -1,0 +1,6 @@
+# Only runtime inputs may enter the build context, including during CI builds.
+**
+!Dockerfile
+!nginx.conf
+!html/
+!html/**

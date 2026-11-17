@@ -1,0 +1,10 @@
+{
+  "image": "cr.yandex/crp85lbhbo07ldt2oj0c/diplom-app@sha256:a8ddcb81bd996cd1c8a70a0ee6b91661986666116f9e62309989f6e9c5f373d9",
+  "id": "sha256:a8ddcb81bd996cd1c8a70a0ee6b91661986666116f9e62309989f6e9c5f373d9",
+  "platform": "linux/amd64",
+  "size_bytes": 26085602,
+  "user": "nginx",
+  "version": "0.1.0",
+  "revision": "local",
+  "built_at": "2026-11-17T10:00:07Z"
+}

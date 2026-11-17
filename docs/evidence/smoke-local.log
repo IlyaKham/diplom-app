@@ -1,0 +1,9 @@
+PASS /healthz: HTTP 200, ok
+PASS /: application HTML served
+PASS static CSS and JavaScript
+PASS /version.json: 0.1.0, revision local
+PASS missing page: HTTP 404
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+PASS nginx configuration; user UID=101; read-only filesystem
+All smoke checks passed.

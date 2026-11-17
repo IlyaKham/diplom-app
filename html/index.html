@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Тестовое nginx-приложение дипломного проекта DevOps.">
+  <title>Diplom · DevOps</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <a class="brand" href="/" aria-label="Diplom, главная">diplom<span>.</span></a>
+      <span class="caption">ДИПЛОМНЫЙ ПРОЕКТ · DEVOPS</span>
+    </header>
+
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow"><span class="dot" aria-hidden="true"></span> NGINX · СТАТИЧЕСКОЕ ПРИЛОЖЕНИЕ</p>
+      <h1 id="page-title">От кода<br>до облака<span>.</span></h1>
+      <p class="intro">Тестовое приложение для проверки сборки контейнера,
+        развёртывания в Kubernetes и доставки новых версий.</p>
+      <a class="button" href="/healthz">Проверить доступность <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <section class="architecture" aria-label="Архитектура проекта">
+      <article class="card">
+        <span class="number">01 / ИНФРАСТРУКТУРА</span>
+        <h2>Yandex Cloud</h2>
+        <p>Облачные ресурсы описаны в Terraform. Состояние хранится в Object Storage.</p>
+      </article>
+      <article class="card">
+        <span class="number">02 / ОРКЕСТРАЦИЯ</span>
+        <h2>Kubernetes</h2>
+        <p>Managed Service for Kubernetes с рабочими узлами в трёх зонах доступности.</p>
+      </article>
+      <article class="card">
+        <span class="number">03 / ДОСТАВКА</span>
+        <h2>GitHub Actions</h2>
+        <p>Целевая схема: сборка образа при коммите и развёртывание релиза по тегу.</p>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <span>Собственный Dockerfile · nginx без прав root</span>
+      <span id="build-info" aria-live="polite">Версия загружается…</span>
+    </footer>
+  </main>
+</body>
+</html>

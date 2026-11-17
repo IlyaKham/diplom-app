@@ -1,0 +1,112 @@
+name: Build and release application
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test and push image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      YC_REGISTRY_ID: ${{ vars.YC_REGISTRY_ID }}
+    outputs:
+      image: ${{ steps.metadata.outputs.image }}
+      version: ${{ steps.metadata.outputs.version }}
+      release: ${{ steps.metadata.outputs.release }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare image metadata
+        id: metadata
+        run: bash ci/image-metadata.sh
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build linux/amd64 image
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+          BUILD_DATE: ${{ steps.metadata.outputs.built_at }}
+        run: |
+          docker build --pull --platform linux/amd64 --tag "$IMAGE" \
+            --build-arg "APP_VERSION=$APP_VERSION" --build-arg "VCS_REF=$GITHUB_SHA" \
+            --build-arg "BUILD_DATE=$BUILD_DATE" .
+      - name: Smoke test the image before publication
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+        run: bash ci/smoke-test.sh "$IMAGE" "$APP_VERSION"
+      - name: Log in to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@b3f9f3de6a883203431aeec20f3cc602fafd3a05 # v2.0.0
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+      - name: Push the tested image and record its digest
+        id: push
+        env:
+          IMAGE: ${{ steps.metadata.outputs.image }}
+        run: |
+          set -Eeuo pipefail
+          docker push "$IMAGE"
+          repository="${IMAGE%:*}"
+          reference=$(docker image inspect --format '{{json .RepoDigests}}' "$IMAGE" | jq -er --arg prefix "$repository@" '[.[] | select(startswith($prefix))] | if length == 1 then .[0] else error("Expected one registry digest") end')
+          digest="${reference##*@}"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          printf 'Published: %s\n' "$reference" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy release to Kubernetes
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    runs-on: diplom-deploy
+    timeout-minutes: 10
+    concurrency:
+      group: diplom-app-release
+      cancel-in-progress: false
+      queue: max
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}
+      IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+      APP_VERSION: ${{ needs.build.outputs.version }}
+      APPLICATION_URL: ${{ vars.APPLICATION_URL }}
+    steps:
+      - name: Install pinned kubectl
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl --fail --silent --show-error --location --retry 3 https://dl.k8s.io/release/v1.35.10/bin/linux/amd64/kubectl -o "$RUNNER_TEMP/bin/kubectl"
+          curl --fail --silent --show-error --location --retry 3 https://dl.k8s.io/release/v1.35.10/bin/linux/amd64/kubectl.sha256 -o "$RUNNER_TEMP/bin/kubectl.sha256"
+          printf '%s  %s\n' "$(cat "$RUNNER_TEMP/bin/kubectl.sha256")" "$RUNNER_TEMP/bin/kubectl" | sha256sum --check
+          chmod 0755 "$RUNNER_TEMP/bin/kubectl"
+          printf '%s\n' "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Roll out the published digest
+        run: |
+          set -Eeuo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$IMAGE" =~ ^cr\.yandex/[a-z0-9]{20}/diplom-app:[a-zA-Z0-9._-]+$ ]]
+          reference="${IMAGE%:*}@$IMAGE_DIGEST"
+          kubectl -n diplom-app set image deployment/diplom-app "nginx=$reference"
+          kubectl -n diplom-app rollout status deployment/diplom-app --timeout=300s
+          actual=$(kubectl -n diplom-app get deployment diplom-app -o jsonpath='{.spec.template.spec.containers[?(@.name=="nginx")].image}')
+          [[ "$actual" == "$reference" ]]
+          printf 'Deployed: %s\n' "$reference" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify the public release
+        run: |
+          set -Eeuo pipefail
+          [[ "$APPLICATION_URL" =~ ^http://[0-9.]+/?$ ]]
+          response=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 "${APPLICATION_URL%/}/version.json")
+          node_runtime=/home/runner/externals/node24/bin/node
+          [[ -x "$node_runtime" ]]
+          "$node_runtime" -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); if(d.version!==process.env.APP_VERSION || d.revision!==process.env.GITHUB_SHA) process.exit(1)' <<< "$response"
+          printf 'Verified release %s at %s\n' "$APP_VERSION" "$APPLICATION_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Show deployment state
+        if: always()
+        run: |
+          kubectl -n diplom-app get deployment diplom-app -o wide
+          kubectl -n diplom-app get pods -o wide
