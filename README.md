@@ -15,9 +15,6 @@
 | `kubernetes/` | Манифесты приложения, Helm values мониторинга/Traefik и настройки ARC с RBAC |
 | `.github/workflows/application.yml` | Сборка, проверка и публикация каждого push; автоматический деплой релизного тега |
 
-Обычный коммит публикуется как `sha-<полный SHA>`. Тег `vX.Y.Z` или `vX.Y.Z-rc.1` дополнительно запускает deploy в Kubernetes по digest. Деплой выполняет временный runner `diplom-deploy` внутри кластера; параметры runner и RBAC находятся в `kubernetes/actions-runner/`.
-
-В GitHub Actions используются Secret `YC_SERVICE_ACCOUNT_KEY` и Variables `YC_REGISTRY_ID`, `APPLICATION_URL`. Облачный ключ нужен только заданию сборки для публикации; deploy использует внутренний Kubernetes ServiceAccount.
 
 Образ релиза в приватном Yandex Container Registry:
 
@@ -30,4 +27,3 @@ cr.yandex/crp85lbhbo07ldt2oj0c/diplom-app@sha256:3e2d086d30d4a3069ca115ef5acfc25
 
 `/` — страница, `/healthz` — HTTP 200 и `ok`, `/version.json` — версия, ревизия и время сборки; неизвестный адрес возвращает 404. Секретов среди build args нет.
 
-Адреса приложения и Grafana, а также данные для входа передаются преподавателю лично.
