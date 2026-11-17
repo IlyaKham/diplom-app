@@ -1,64 +1,33 @@
 # diplom-app
 
-Тестовое приложение диплома DevOps: nginx отдаёт статическую страницу. Это отдельный локальный Git-репозиторий; удалённый проект GitHub будет подключён на этапе CI/CD.
+Статическое nginx-приложение диплома DevOps. Собственный Dockerfile, HTTP на порту 8080, пользователь UID 101, файловая система только для чтения с временным `/tmp`.
 
-## Состав
+- [Работающее приложение](http://46.243.210.163/) — `v1.0.0`.
+- [Инфраструктура и отчёт со скриншотами](https://github.com/IlyaKham/diplom-infrastructure/blob/main/REPORT.md).
+- [Успешная сборка и деплой релиза](https://github.com/IlyaKham/diplom-app/actions/runs/44100761404).
 
-- `Dockerfile` — собственная сборка на официальном `nginx:1.30.6-alpine`, закреплённом digest.
-- `nginx.conf` — HTTP на порту 8080, журналы в stdout/stderr, временные файлы в `/tmp`.
-- `html/` — страница, стили и отображение версии сборки без внешних зависимостей.
-- `scripts/` — локальная сборка, проверка и публикация в Yandex Container Registry.
-- `docs/validation.md` — результаты фактической проверки и адрес образа.
+## Реализация
 
-Процесс nginx запускается с UID 101 (`nginx`). Образ поддерживает файловую систему только для чтения при наличии доступного для записи `/tmp`. Kubernetes Service на следующем этапе будет принимать внешний HTTP на 80 и направлять его на 8080 контейнера.
-
-## Сборка и проверка
-
-Нужны запущенный Docker Desktop в режиме Linux containers и PowerShell. Команды из папки этого репозитория:
-
-```powershell
-.\scripts\Build-App.ps1
-.\scripts\Test-App.ps1
-```
-
-Проверка запускает временный контейнер только на `127.0.0.1:18080`, проверяет HTTP, версию, конфигурацию nginx и UID; затем удаляет свой контейнер.
-
-Для самостоятельного просмотра страницы:
-
-```powershell
-docker run --detach --name diplom-app-preview --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --cap-drop ALL --security-opt no-new-privileges:true --publish 127.0.0.1:18080:8080 diplom-app:0.1.0
-```
-
-Открой `http://127.0.0.1:18080`. После просмотра: `docker rm --force diplom-app-preview`.
-
-## Интерфейсы
-
-| Адрес | Ответ |
+| Файл | Назначение |
 | --- | --- |
-| `/` | Статическая страница диплома |
-| `/healthz` | HTTP 200, `ok`; endpoint для probes |
-| `/version.json` | Версия, ревизия исходников и время сборки UTC |
-| Несуществующий адрес | HTTP 404 |
+| `Dockerfile` | Сборка на nginx 1.30.6-alpine, закреплённом digest; метаданные версии и коммита |
+| `nginx.conf` | HTTP, healthz, журналы stdout/stderr, временные файлы в /tmp |
+| `html/` | Страница, стили и отображение версии |
+| `.github/workflows/application.yml` | Сборка, проверка и публикация каждого push; автоматический деплой релизного тега |
+| `ci/image-metadata.sh` | Теги образа, версия, SHA и время сборки |
+| `ci/smoke-test.sh` | Проверка образа перед публикацией |
 
-Параметры сборки `APP_VERSION`, `VCS_REF`, `BUILD_DATE` записываются в `/version.json` и OCI labels. Секретов среди build args нет. Локальная первая версия имеет номер `0.1.0` и ревизию `local`; в CI ревизией будет SHA коммита.
+Обычный коммит публикуется как `sha-<полный SHA>`. Тег `vX.Y.Z` или `vX.Y.Z-rc.1` дополнительно запускает deploy в Kubernetes по digest. Деплой выполняет временный runner `diplom-deploy` внутри кластера; параметры runner и RBAC находятся в репозитории инфраструктуры.
 
-## Публикация
+В GitHub Actions используются Secret `YC_SERVICE_ACCOUNT_KEY` и Variables `YC_REGISTRY_ID`, `APPLICATION_URL`. Облачный ключ нужен только заданию сборки для публикации; deploy использует внутренний Kubernetes ServiceAccount.
 
-Реестр `diplom-registry` создаётся Terraform в репозитории инфраструктуры. Он приватный. Используется существующий аккаунт `diplom-terraform`; профиль yc должен быть настроен на его авторизованный JSON-ключ. Значения ключа вводит владелец локально, в Git они не сохраняются.
+Образ релиза в приватном Yandex Container Registry:
 
-Из корня общего рабочего каталога, после создания реестра:
-
-```powershell
-$registryId = .\.tools\terraform\terraform.exe '-chdir=infrastructure/terraform' output -raw container_registry_id
-.\application\scripts\Publish-App.ps1 -RegistryId $registryId -YcPath "$PWD\.tools\yc\yc.exe" -YcConfig "$PWD\.tools\yc\terraform.yaml"
+```text
+cr.yandex/crp85lbhbo07ldt2oj0c/diplom-app:v1.0.0
+cr.yandex/crp85lbhbo07ldt2oj0c/diplom-app@sha256:3e2d086d30d4a3069ca115ef5acfc253c7d1e199c6a3c848c17637203d7fbc81
 ```
 
-При отдельном checkout приложения передай реальный ID реестра и пути к своим yc/profile. Скрипт получает временный IAM-токен, передаёт его через stdin Docker, загружает образ и скачивает его для проверки. Временная конфигурация входа удаляется в `finally`; существующие настройки Docker не меняются. Токен не нужно копировать в чат или исходники.
+Локальная сборка: `docker build -t diplom-app:local .`. Проверка в Bash: `bash ci/smoke-test.sh diplom-app:local dev` (нужны Docker, curl, jq и свободный порт 18080).
 
-Отправляется тег `0.1.0`; точный digest опубликован в [результатах](docs/validation.md). Для развёртывания следует использовать digest, чтобы состав релиза не менялся при перезаписи тега.
-
-## Развёртывание и следующие шаги
-
-На этапе 4 приложение развёрнуто в Managed Kubernetes двумя репликами. Публичный адрес: [http://46.243.210.163/](http://46.243.210.163/), HTTP на порту 80. Deployment использует опубликованный digest образа `0.1.0`; конфигурации находятся в отдельном репозитории инфраструктуры.
-
-Для этапа 5 подготовлен `.github/workflows/application.yml`: сборка, проверка и публикация при каждом push; для релизного тега `v1.0.0` дополнительно выполняется деплой по digest и проверка публичной версии. Обычный коммит публикуется как `sha-<полный SHA>`. Релиз обновляет приложение автоматически через временный runner внутри Kubernetes. Реальные запуски проверяются после первой отправки исходников в GitHub.
+`/` — страница, `/healthz` — HTTP 200 и `ok`, `/version.json` — версия, ревизия и время сборки; неизвестный адрес возвращает 404. Секретов среди build args нет.
