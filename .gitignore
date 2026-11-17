@@ -26,3 +26,9 @@ kubeconfig*
 *.key
 *.pem
 node_modules/
+
+# Local helper scripts and report images stay outside source control.
+*.ps1
+*.sh
+/screenshots/
+/docs/screenshots/
